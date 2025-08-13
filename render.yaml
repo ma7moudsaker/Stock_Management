@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: stock-management
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --bind :$PORT app:app
+    envVars:
+      - key: SECRET_KEY
+        value: your-secure-secret-key-here-2025
+      - key: FLASK_ENV
+        value: production

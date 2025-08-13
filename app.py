@@ -9,7 +9,7 @@ from io import BytesIO
 app = Flask(__name__)
 
 # إعدادات الأمان والإنتاج
-app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-here-change-in-production')
+app.secret_key = os.environ.get('SECRET_KEY', 'fallback-secret-for-dev')
 
 # إعداد رفع الصور
 UPLOAD_FOLDER = 'static/uploads/products'
@@ -843,10 +843,10 @@ def health_check():
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    debug = not os.environ.get('DATABASE_URL')  # Debug فقط في البيئة المحلية
+    debug = os.environ.get('FLASK_ENV') != 'production'
     
-    print(f"🚀 Starting Stock Management System...")
-    print(f"🌐 Environment: {'Production' if os.environ.get('DATABASE_URL') else 'Development'}")
-    print(f"📊 Running on port: {port}")
+    print(f"🚀 Starting on Render...")
+    print(f"📊 Port: {port}")
+    print(f"🔧 Debug: {debug}")
     
     app.run(debug=debug, host='0.0.0.0', port=port)
