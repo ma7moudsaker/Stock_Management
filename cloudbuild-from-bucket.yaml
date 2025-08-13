@@ -1,0 +1,29 @@
+steps:
+  # تحميل الكود من الـ bucket
+  - name: 'gcr.io/cloud-builders/gsutil'
+    args: ['cp', '-r', 'gs://stock-management-source/*', '/workspace/']
+  
+  # بناء Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/isouq-stock/stock-management', '/workspace/']
+  
+  # رفع image لـ Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/isouq-stock/stock-management']
+  
+  # نشر على Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+    - 'run'
+    - 'deploy'
+    - 'stock-management'
+    - '--image'
+    - 'gcr.io/isouq-stock/stock-management'
+    - '--region'
+    - 'us-central1'
+    - '--platform'
+    - 'managed'
+    - '--allow-unauthenticated'
+    - '--port'
+    - '8080'

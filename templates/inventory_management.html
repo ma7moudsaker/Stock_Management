@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory Management - Stock Management</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .stock-input {
+            width: 70px;
+            text-align: center;
+            font-weight: bold;
+        }
+        .color-indicator {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            display: inline-block;
+            margin-right: 8px;
+            border: 2px solid #ccc;
+        }
+        .color-image-small {
+            width: 30px;
+            height: 30px;
+            object-fit: cover;
+            border-radius: 6px;
+            border: 2px solid #ddd;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .color-image-small:hover {
+            transform: scale(1.2);
+            border-color: #007bff;
+        }
+        .no-image-small {
+            width: 30px;
+            height: 30px;
+            background: linear-gradient(45deg, #f0f0f0 25%, transparent 25%), 
+                        linear-gradient(-45deg, #f0f0f0 25%, transparent 25%);
+            background-size: 6px 6px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            color: #999;
+        }
+        .product-row {
+            border-bottom: 2px solid #eee;
+            transition: background-color 0.2s;
+        }
+        .product-row:hover {
+            background-color: #f8f9fa;
+        }
+        .sticky-header {
+            position: sticky;
+            top: 0;
+            background: white;
+            z-index: 1020;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .product-size-badge {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.75em;
+            font-weight: 500;
+        }
+        .product-tags-small {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 3px;
+            margin-top: 3px;
+        }
+        .changed-input {
+            background-color: #fff3cd !important;
+            border-color: #ffc107 !important;
+            font-weight: bold;
+        }
+		.color-image-large {
+			width: 50px;
+			height: 50px;
+			object-fit: cover;
+			border-radius: 8px;
+			border: 2px solid #ddd;
+			cursor: pointer;
+			transition: transform 0.2s;
+		}
+		.color-image-large:hover {
+			transform: scale(1.1);
+			border-color: #007bff;
+		}
+		.no-image-large {
+			width: 50px;
+			height: 50px;
+			background: linear-gradient(45deg, #f0f0f0 25%, transparent 25%), 
+						linear-gradient(-45deg, #f0f0f0 25%, transparent 25%);
+			background-size: 8px 8px;
+			border: 2px solid #ddd;
+			border-radius: 8px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			font-size: 14px;
+			color: #999;
+			margin: 0 auto;
+		}
+		.stock-input-large {
+			text-align: center;
+			font-weight: bold;
+			font-size: 12px;
+		}
+		.color-indicator {
+			width: 15px;
+			height: 15px;
+			border-radius: 3px;
+			border: 1px solid #ccc;
+		}
+
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-md-2 bg-dark text-white p-3">
+                <h4>📦 Stock Manager</h4>
+                <hr>
+                <ul class="nav flex-column">
+                    <!-- Main Pages -->
+                    <li class="nav-item">
+                        <a class="nav-link text-white" href="/">🏠 Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-white" href="/products_new">📋 Products</a>
+                    </li>
+                    
+                    <!-- Add Products -->
+                    <li class="nav-item"><hr class="text-white"></li>
+                    <li class="nav-item">
+                        <small class="text-muted">ADD PRODUCTS</small>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-white" href="/add_product_new">➕ Add Single Product</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-white" href="/add_products_multi">➕ Add Multiple Products</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-white" href="/bulk_upload_excel">📊 Bulk Upload Excel</a>
+                    </li>
+                    
+                    <!-- Inventory Management -->
+                    <li class="nav-item"><hr class="text-white"></li>
+                    <li class="nav-item">
+                        <small class="text-muted">INVENTORY</small>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-white active bg-primary" href="/inventory_management">📦 Bulk Inventory</a>
+                    </li>
+                    
+                    <!-- Settings -->
+                    <li class="nav-item"><hr class="text-white"></li>
+                    <li class="nav-item">
+                        <small class="text-muted">SETTINGS</small>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-white" href="/manage_brands">🏷️ Brands</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-white" href="/manage_colors">🎨 Colors</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-white" href="/manage_product_types">📦 Product Types</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-white" href="/manage_trader_categories">👥 Trader Categories</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-white" href="/manage_tags">🏷️ Tags</a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Main Content -->
+            <div class="col-md-10 p-4">
+                <!-- Header -->
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h1>📦 Bulk Inventory Management</h1>
+                    <div>
+                        <button type="button" class="btn btn-info me-2" onclick="generateReport()">📊 Generate Report</button>
+                        <button type="button" class="btn btn-success" onclick="exportData()">📤 Export Data</button>
+                    </div>
+                </div>
+                
+                <!-- Summary Cards -->
+                <div class="row mb-4">
+                    <div class="col-md-3">
+                        <div class="card bg-primary text-white">
+                            <div class="card-body text-center">
+                                <h4>{{ summary.total_products }}</h4>
+                                <small>Total Products</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-success text-white">
+                            <div class="card-body text-center">
+                                <h4>{{ summary.total_stock }}</h4>
+                                <small>Total Stock</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-warning text-white">
+                            <div class="card-body text-center">
+                                <h4>{{ summary.low_stock_variants }}</h4>
+                                <small>Low Stock Items</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-danger text-white">
+                            <div class="card-body text-center">
+                                <h4>{{ summary.out_of_stock_variants }}</h4>
+                                <small>Out of Stock</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Search and Filters -->
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <form method="GET" id="filterForm">
+                            <div class="row align-items-end">
+                                <div class="col-md-4">
+                                    <label for="search" class="form-label">Search Products</label>
+                                    <input type="text" class="form-control" id="search" name="search" 
+                                           placeholder="Search by code, brand, size, tags..." 
+                                           value="{{ search_term }}">
+                                </div>
+                                <div class="col-md-3">
+                                    <label for="brand" class="form-label">Filter by Brand</label>
+                                    <select class="form-control" id="brand" name="brand">
+                                        <option value="">All Brands</option>
+                                        {% for brand in brands %}
+                                        <option value="{{ brand }}" {% if brand == brand_filter %}selected{% endif %}>{{ brand }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <label for="category" class="form-label">Filter by Category</label>
+                                    <select class="form-control" id="category" name="category">
+                                        <option value="">All Categories</option>
+                                        {% for category in categories %}
+                                        <option value="{{ category }}" {% if category == category_filter %}selected{% endif %}>{{ category }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <button type="submit" class="btn btn-primary w-100">🔍 Filter</button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                
+                <!-- Inventory Table -->
+                <form method="POST" action="/update_inventory" id="inventoryForm">
+                    <div class="card">
+                        <div class="card-header sticky-header">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0">📋 Inventory List ({{ inventory_data|length }} products)</h5>
+                                <div>
+                                    <span id="changesCounter" class="badge bg-warning me-2" style="display: none;">0 changes</span>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="resetAllChanges()">🔄 Reset Changes</button>
+                                    <button type="submit" class="btn btn-sm btn-success">💾 Save All Changes</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-body p-0">
+                            {% if inventory_data %}
+                            <div class="table-responsive">
+                                <table class="table table-hover mb-0">
+                                    <thead class="table-dark sticky-header">
+                                        <tr>
+                                            <th style="width: 15%;">Product Info</th>
+                                            <th style="width: 10%;">Size & Tags</th>
+                                            <th style="width: 45%;">Colors, Images & Stock</th>
+                                            <th style="width: 10%;">Total Stock</th>
+                                            <th style="width: 20%;">Quick Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for item in inventory_data %}
+                                        {% set product = item.product %}
+                                        <tr class="product-row">
+                                            <td>
+                                                <strong class="text-primary">{{ product[1] }}</strong><br>
+                                                <small class="text-muted">{{ product[2] }}</small><br>
+                                                <span class="badge bg-info">{{ product[4] }}</span><br>
+                                                <small class="text-muted">ID: {{ product[0] }}</small>
+                                            </td>
+                                            <td>
+                                                {% if product[5] %}
+                                                    <span class="product-size-badge">{{ product[5] }}</span><br>
+                                                {% endif %}
+                                                {% if item.tags %}
+                                                    <div class="product-tags-small">
+                                                        {% for tag in item.tags %}
+                                                            <span class="badge" style="background-color: {{ tag[3] }}; color: white; font-size: 0.6em;">
+                                                                {{ tag[1] }}
+                                                            </span>
+                                                        {% endfor %}
+                                                    </div>
+                                                {% endif %}
+                                            </td>
+											<td>
+												<div class="row g-2">
+													{% for variant in item.color_variants %}
+													<div class="col-6 mb-3">
+														<div class="card border-light h-100">
+															<div class="card-body p-2 text-center">
+																<!-- Color Image (أكبر) -->
+																<div class="mb-2">
+																	{% if variant[5] %}
+																		<img src="{{ variant[5] }}" 
+																			 alt="{{ variant[2] }}" 
+																			 class="color-image-large"
+																			 onclick="openImageInNewTab('{{ variant[5] }}')"
+																			 title="Click to view full size - {{ variant[2] }}">
+																	{% else %}
+																		<div class="no-image-large" title="No image for {{ variant[2] }}">
+																			📷
+																		</div>
+																	{% endif %}
+																</div>
+																
+																<!-- Color Name & Indicator -->
+																<div class="d-flex align-items-center justify-content-center mb-2">
+																	<div class="color-indicator me-1" style="background-color: {{ variant[3] }};"></div>
+																	<small class="fw-bold text-truncate">{{ variant[2] }}</small>
+																</div>
+																
+																<!-- Stock Input (تحت الصورة) -->
+																<div class="input-group input-group-sm">
+																	<button type="button" class="btn btn-outline-secondary btn-sm" 
+																			onclick="adjustStock({{ variant[0] }}, -1)">-</button>
+																	<input type="number" class="form-control stock-input-large" 
+																		   name="stock_{{ variant[0] }}" 
+																		   value="{{ variant[4] }}" 
+																		   min="0" 
+																		   onchange="markChanged(this)"
+																		   data-original="{{ variant[4] }}">
+																	<button type="button" class="btn btn-outline-secondary btn-sm" 
+																			onclick="adjustStock({{ variant[0] }}, 1)">+</button>
+																</div>
+															</div>
+														</div>
+													</div>
+													{% endfor %}
+												</div>
+											</td>
+
+                                            <td>
+                                                <span class="badge bg-success fs-6" id="total_{{ product[0] }}">{{ item.total_stock }}</span>
+                                            </td>
+                                            <td>
+                                                <div class="btn-group-vertical btn-group-sm w-100">
+                                                    <button type="button" class="btn btn-outline-success btn-sm mb-1" 
+                                                            onclick="addToAll({{ product[0] }}, 5)" title="Add 5 to all colors">+5 All</button>
+                                                    <button type="button" class="btn btn-outline-info btn-sm mb-1" 
+                                                            onclick="addToAll({{ product[0] }}, 10)" title="Add 10 to all colors">+10 All</button>
+                                                    <button type="button" class="btn btn-outline-warning btn-sm mb-1" 
+                                                            onclick="setAllToZero({{ product[0] }})" title="Set all to 0">Zero All</button>
+                                                    <a href="/product_details/{{ product[0] }}" class="btn btn-outline-primary btn-sm" 
+                                                       title="View details">👁️ Details</a>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {% else %}
+                            <div class="text-center py-5">
+                                <h4>No products found</h4>
+                                <p class="text-muted">Try adjusting your search filters.</p>
+                                <a href="/inventory_management" class="btn btn-primary">Show All Products</a>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let changedInputs = new Set();
+        
+        function adjustStock(variantId, change) {
+            const input = document.querySelector(`input[name="stock_${variantId}"]`);
+            const currentValue = parseInt(input.value) || 0;
+            const newValue = Math.max(0, currentValue + change);
+            input.value = newValue;
+            markChanged(input);
+            updateProductTotal(input);
+        }
+        
+        function markChanged(input) {
+            const originalValue = input.getAttribute('data-original');
+            const currentValue = input.value;
+            
+            if (originalValue !== currentValue) {
+                input.classList.add('changed-input');
+                changedInputs.add(input.name);
+            } else {
+                input.classList.remove('changed-input');
+                changedInputs.delete(input.name);
+            }
+            
+            updateChangesCounter();
+            updateProductTotal(input);
+        }
+        
+        function updateChangesCounter() {
+            const counter = document.getElementById('changesCounter');
+            if (changedInputs.size > 0) {
+                counter.textContent = `${changedInputs.size} changes`;
+                counter.style.display = 'inline';
+            } else {
+                counter.style.display = 'none';
+            }
+        }
+        
+        function updateProductTotal(input) {
+            const productRow = input.closest('tr');
+            const allInputs = productRow.querySelectorAll('input[type="number"]');
+            let total = 0;
+            
+            allInputs.forEach(inp => {
+                total += parseInt(inp.value) || 0;
+            });
+            
+            const productId = productRow.querySelector('[id^="total_"]').id.replace('total_', '');
+            document.getElementById(`total_${productId}`).textContent = total;
+        }
+        
+        function addToAll(productId, amount) {
+            const productRow = document.querySelector(`#total_${productId}`).closest('tr');
+            const inputs = productRow.querySelectorAll('input[type="number"]');
+            
+            inputs.forEach(input => {
+                const currentValue = parseInt(input.value) || 0;
+                input.value = currentValue + amount;
+                markChanged(input);
+            });
+            
+            updateProductTotal(inputs[0]);
+        }
+        
+        function setAllToZero(productId) {
+            if (confirm('Are you sure you want to set all colors to 0 stock?')) {
+                const productRow = document.querySelector(`#total_${productId}`).closest('tr');
+                const inputs = productRow.querySelectorAll('input[type="number"]');
+                
+                inputs.forEach(input => {
+                    input.value = 0;
+                    markChanged(input);
+                });
+                
+                updateProductTotal(inputs[0]);
+            }
+        }
+        
+        function resetAllChanges() {
+            if (confirm('Are you sure you want to reset all changes?')) {
+                document.querySelectorAll('input[type="number"]').forEach(input => {
+                    const originalValue = input.getAttribute('data-original');
+                    input.value = originalValue;
+                    input.classList.remove('changed-input');
+                });
+                changedInputs.clear();
+                updateChangesCounter();
+                location.reload();
+            }
+        }
+        
+        function generateReport() {
+            alert('Generate inventory report - Coming soon!');
+        }
+        
+        function exportData() {
+            alert('Export inventory data - Coming soon!');
+        }
+        
+        function openImageInNewTab(imageUrl) {
+            window.open(imageUrl, '_blank');
+        }
+        
+        // Live search
+        document.getElementById('search').addEventListener('input', function() {
+            clearTimeout(this.searchTimeout);
+            this.searchTimeout = setTimeout(() => {
+                document.getElementById('filterForm').submit();
+            }, 500);
+        });
+        
+        // Show changes count in form submission
+        document.getElementById('inventoryForm').addEventListener('submit', function(e) {
+            if (changedInputs.size === 0) {
+                e.preventDefault();
+                alert('No changes detected!');
+                return false;
+            }
+            
+            if (!confirm(`Save ${changedInputs.size} stock changes?`)) {
+                e.preventDefault();
+                return false;
+            }
+        });
+    </script>
+</body>
+</html>
