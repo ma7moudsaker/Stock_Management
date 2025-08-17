@@ -69,6 +69,7 @@ class GoogleDriveBackup:
         """إنشاء أو العثور على مجلد النسخ الاحتياطية"""
         try:
             if not self.drive_service:
+                print("⚠️ Drive service غير متاح")
                 return
             
             # البحث عن المجلد الموجود
@@ -76,22 +77,35 @@ class GoogleDriveBackup:
             results = self.drive_service.files().list(q=query).execute()
             folders = results.get('files', [])
             
-            if folders:
-                self.backup_folder_id = folders[0]['id']
-                print(f"✅ تم العثور على مجلد النسخ الاحتياطية: {folders['id']}")
+            print(f"🔍 تم العثور على {len(folders)} مجلد")
+            
+            if folders and len(folders) > 0:
+                first_folder = folders
+                if isinstance(first_folder, dict) and 'id' in first_folder:
+                    self.backup_folder_id = first_folder['id']
+                    print(f"✅ تم العثور على مجلد النسخ الاحتياطية: {self.backup_folder_id}")
+                else:
+                    print(f"⚠️ تنسيق مجلد غير متوقع: {type(first_folder)}")
+                    raise Exception("تنسيق نتيجة البحث غير متوقع")
             else:
                 # إنشاء مجلد جديد
+                print("📁 إنشاء مجلد جديد...")
                 folder_metadata = {
                     'name': 'Stock_Management_Backups',
                     'mimeType': 'application/vnd.google-apps.folder'
                 }
                 folder = self.drive_service.files().create(body=folder_metadata).execute()
-                self.backup_folder_id = folder.get('id')
-                print(f"✅ تم إنشاء مجلد النسخ الاحتياطية: {self.backup_folder_id}")
                 
+                if isinstance(folder, dict) and 'id' in folder:
+                    self.backup_folder_id = folder['id']
+                    print(f"✅ تم إنشاء مجلد النسخ الاحتياطية: {self.backup_folder_id}")
+                else:
+                    raise Exception("فشل في إنشاء المجلد")
+                    
         except Exception as e:
             print(f"❌ خطأ في إعداد مجلد النسخ الاحتياطية: {e}")
-    
+            self.backup_folder_id = None
+        
     def export_database_to_json(self):
         """تصدير قاعدة البيانات لـ JSON"""
         try:
