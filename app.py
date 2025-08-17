@@ -52,7 +52,7 @@ def restore_on_startup():
             # فحص إذا كانت قاعدة البيانات فارغة
             conn = db.get_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM brands")
+            cursor.execute("SELECT COUNT(*) FROM base_products")
             brand_count = cursor.fetchone()[0]
             conn.close()
             
