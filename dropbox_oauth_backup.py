@@ -7,9 +7,9 @@ import requests
 
 class DropboxOAuthBackup:
     def __init__(self):
-        self.app_key = os.getenv('oh7uq5cnc3y6guy')
-        self.app_secret = os.getenv('tf2ge1aymkr64sa')
-        self.refresh_token = os.getenv('9lmh_0xel9QAAAAAAAAAAcTUcQzyL-31zTJKffBvxua5DbZ4-Om5hkaPW-yhdgZR')
+        self.app_key = os.getenv('DROPBOX_APP_KEY')
+        self.app_secret = os.getenv('DROPBOX_APP_SECRET')
+        self.refresh_token = os.getenv('DROPBOX_REFRESH_TOKEN')
         self.access_token = None
         self.dbx = None
         self.max_backups = 10
