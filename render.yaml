@@ -12,3 +12,7 @@ services:
         value: production
       - key: GOOGLE_CREDENTIALS_BASE64
         value: [base64_encoded_credentials_here]
+      - key: GUNICORN_TIMEOUT
+        value: 300
+      - key: GUNICORN_CMD_ARGS
+        value: "--timeout 300 --workers 2 --worker-class sync"

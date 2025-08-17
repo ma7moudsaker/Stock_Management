@@ -695,7 +695,7 @@ def bulk_upload_excel():
                 flash('Please upload a valid Excel file!', 'error')
                 return redirect(url_for('bulk_upload_excel'))
             
-            df = pd.read_excel(file)
+            df = pd.read_excel(file, dtype=str)
             
             # التحقق من وجود الأعمدة المطلوبة
             required_columns = ['Product Code', 'Brand Name', 'Product Type', 'Category', 

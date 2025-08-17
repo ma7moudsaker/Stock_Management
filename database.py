@@ -241,16 +241,18 @@ class StockDatabase:
         return clean_name.strip('_')
     
     def download_and_save_image(self, image_url, product_code, color_name):
-        """تحميل صورة من URL وحفظها محلياً"""
+        """تحميل صورة من URL وحفظها محلياً مع تحسين استهلاك الذاكرة"""
         try:
             # إنشاء مجلد المنتج
             product_folder = self.create_product_folder(product_code)
             
-            # تحميل الصورة
+            # تحميل الصورة مع streaming لتوفير الذاكرة
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
-            response = requests.get(image_url, headers=headers, timeout=15)
+            
+            # استخدام stream=True وtimeout أقصر لتجنب التعليق
+            response = requests.get(image_url, headers=headers, timeout=15, stream=True)
             
             if response.status_code == 200:
                 # تحديد امتداد الملف
@@ -258,26 +260,35 @@ class StockDatabase:
                 file_extension = os.path.splitext(parsed_url.path)[1].lower()
                 if not file_extension or file_extension not in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
                     file_extension = '.jpg'
-                
+
                 # تنظيف اسم اللون وإنشاء اسم الملف
                 clean_color = self.clean_color_name(color_name)
                 filename = f"{product_code}_{clean_color}{file_extension}"
                 file_path = os.path.join(product_folder, filename)
-                
-                # حفظ الصورة
+
+                # حفظ الصورة في chunks لتوفير الذاكرة
                 with open(file_path, 'wb') as f:
-                    f.write(response.content)
-                
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:  # تصفية الـ chunks الفارغة
+                            f.write(chunk)
+
                 # إرجاع المسار النسبي
                 return f"/static/uploads/products/{product_code}/{filename}"
             
-            print(f"Failed to download image: HTTP {response.status_code}")
+            else:
+                print(f"⚠️ فشل تحميل الصورة: HTTP {response.status_code} - {image_url}")
+                return None
+
+        except requests.exceptions.Timeout:
+            print(f"⚠️ انتهت مهلة تحميل الصورة: {image_url}")
             return None
-            
+        except requests.exceptions.ConnectionError:
+            print(f"⚠️ خطأ في الاتصال أثناء تحميل الصورة: {image_url}")
+            return None
         except Exception as e:
-            print(f"Error downloading image from {image_url}: {e}")
+            print(f"❌ خطأ في تحميل الصورة من {image_url}: {e}")
             return None
-    
+        
     def save_manual_image(self, uploaded_file, product_code, color_name):
         """حفظ صورة مرفوعة يدوياً"""
         try:
@@ -1313,187 +1324,212 @@ class StockDatabase:
 
 
     def bulk_add_products_from_excel_enhanced(self, excel_data):
-        """إضافة منتجات من Excel مع النظام المحسن - كل لون في صف منفصل"""
+        """إضافة منتجات من Excel مع تحسين الذاكرة ومعالجة أخطاء البيانات المختلطة"""
         conn = self.get_connection()
         cursor = conn.cursor()
         
         success_count = 0
         failed_products = []
-        processed_products = {}  # لتجنب تكرار المنتجات
+        processed_products = {}
         created_brands = []
         created_colors = []
         created_types = []
         
+        # معالجة البيانات في دفعات صغيرة لتوفير الذاكرة
+        BATCH_SIZE = 50
+        
         try:
-            for index, row in enumerate(excel_data, 1):
-                try:
-                    # استخراج البيانات الأساسية
-                    product_code = str(row['Product Code']).strip()
-                    brand_name = str(row['Brand Name']).strip()
-                    product_type_name = str(row['Product Type']).strip()
-                    color_name = str(row['Color Name']).strip()
-                    
-                    if not product_code or not brand_name or not color_name:
+            for batch_start in range(0, len(excel_data), BATCH_SIZE):
+                batch_end = min(batch_start + BATCH_SIZE, len(excel_data))
+                batch_data = excel_data[batch_start:batch_end]
+                
+                print(f"🔄 معالجة الدفعة {batch_start + 1}-{batch_end} من إجمالي {len(excel_data)}")
+                
+                for index, row in enumerate(batch_data, batch_start + 1):
+                    try:
+                        # تحويل جميع القيم إلى نصوص مع حماية من النوع float
+                        product_code = str(row.get('Product Code', '')).strip()
+                        brand_name = str(row.get('Brand Name', '')).strip()
+                        product_type_name = str(row.get('Product Type', '')).strip()
+                        color_name = str(row.get('Color Name', '')).strip()
+                        category = str(row.get('Category', '')).strip()
+                        size = str(row.get('Size', '')).strip()
+                        
+                        # معالجة الأسعار والأرقام بحذر
+                        try:
+                            wholesale_price = float(row.get('Wholesale Price', 0))
+                            retail_price = float(row.get('Retail Price', 0))
+                            initial_stock = int(row.get('Stock', 0))
+                        except (ValueError, TypeError):
+                            wholesale_price = 0.0
+                            retail_price = 0.0
+                            initial_stock = 0
+                        
+                        tags = str(row.get('Tags', '')).strip()
+                        image_url = str(row.get('Image URL', '')).strip()
+                        
+                        # التحقق من البيانات الأساسية المطلوبة
+                        if not product_code or not brand_name or not color_name:
+                            failed_products.append({
+                                'row': index,
+                                'product_code': product_code,
+                                'error': 'Missing required data (Product Code, Brand Name, or Color Name)'
+                            })
+                            continue
+
+                        # البحث عن أو إنشاء Brand
+                        cursor.execute('SELECT id FROM brands WHERE brand_name = ?', (brand_name,))
+                        brand_result = cursor.fetchone()
+                        if not brand_result:
+                            cursor.execute('INSERT INTO brands (brand_name) VALUES (?)', (brand_name,))
+                            brand_id = cursor.lastrowid
+                            created_brands.append(brand_name)
+                            print(f"✅ تم إنشاء براند جديد: {brand_name}")
+                        else:
+                            brand_id = brand_result[0]
+
+                        # البحث عن أو إنشاء Product Type
+                        cursor.execute('SELECT id FROM product_types WHERE type_name = ?', (product_type_name,))
+                        type_result = cursor.fetchone()
+                        if not type_result:
+                            cursor.execute('INSERT INTO product_types (type_name) VALUES (?)', (product_type_name,))
+                            product_type_id = cursor.lastrowid
+                            created_types.append(product_type_name)
+                            print(f"✅ تم إنشاء نوع منتج جديد: {product_type_name}")
+                        else:
+                            product_type_id = type_result[0]
+
+                        # البحث عن أو إنشاء Color
+                        cursor.execute('SELECT id FROM colors WHERE color_name = ?', (color_name,))
+                        color_result = cursor.fetchone()
+                        if not color_result:
+                            # أكواد ألوان افتراضية
+                            default_color_codes = {
+                                'black': '#000000', 'white': '#FFFFFF', 'red': '#FF0000',
+                                'blue': '#0000FF', 'green': '#008000', 'yellow': '#FFFF00',
+                                'brown': '#8B4513', 'pink': '#FFC0CB', 'purple': '#800080',
+                                'orange': '#FFA500', 'gray': '#808080', 'grey': '#808080',
+                                'gold': '#FFD700', 'silver': '#C0C0C0', 'navy': '#000080',
+                                'beige': '#F5F5DC', 'maroon': '#800000'
+                            }
+                            color_code = default_color_codes.get(color_name.lower(), '#FFFFFF')
+                            cursor.execute('INSERT INTO colors (color_name, color_code) VALUES (?, ?)',
+                                        (color_name, color_code))
+                            color_id = cursor.lastrowid
+                            created_colors.append(color_name)
+                            print(f"✅ تم إنشاء لون جديد: {color_name} ({color_code})")
+                        else:
+                            color_id = color_result[0]
+
+                        # إنشاء أو تحديث المنتج الأساسي
+                        product_key = f"{product_code}_{brand_id}"
+                        if product_key not in processed_products:
+                            # التحقق من وجود المنتج
+                            cursor.execute('''
+                                SELECT id FROM base_products
+                                WHERE product_code = ? AND brand_id = ? AND trader_category = ?
+                            ''', (product_code, brand_id, category))
+                            existing_product = cursor.fetchone()
+                            
+                            if existing_product:
+                                base_product_id = existing_product[0]
+                                # تحديث بيانات المنتج الموجود
+                                cursor.execute('''
+                                    UPDATE base_products
+                                    SET product_type_id = ?, product_size = ?,
+                                        wholesale_price = ?, retail_price = ?
+                                    WHERE id = ?
+                                ''', (product_type_id, size, wholesale_price, retail_price, base_product_id))
+                            else:
+                                # إنشاء منتج جديد
+                                cursor.execute('''
+                                    INSERT INTO base_products
+                                    (product_code, brand_id, product_type_id, trader_category,
+                                    product_size, wholesale_price, retail_price, supplier_id)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                ''', (product_code, brand_id, product_type_id, category,
+                                    size, wholesale_price, retail_price, 1))
+                                base_product_id = cursor.lastrowid
+
+                            processed_products[product_key] = base_product_id
+                        else:
+                            base_product_id = processed_products[product_key]
+
+                        # إضافة أو تحديث متغير اللون
+                        cursor.execute('''
+                            SELECT id FROM product_variants
+                            WHERE base_product_id = ? AND color_id = ?
+                        ''', (base_product_id, color_id))
+                        existing_variant = cursor.fetchone()
+
+                        if existing_variant:
+                            # تحديث المخزون الموجود
+                            variant_id = existing_variant[0]
+                            cursor.execute('''
+                                UPDATE product_variants
+                                SET current_stock = ?
+                                WHERE id = ?
+                            ''', (initial_stock, variant_id))
+                        else:
+                            # إنشاء متغير جديد
+                            cursor.execute('''
+                                INSERT INTO product_variants
+                                (base_product_id, color_id, current_stock)
+                                VALUES (?, ?, ?)
+                            ''', (base_product_id, color_id, initial_stock))
+                            variant_id = cursor.lastrowid
+
+                        # إضافة أو تحديث الصورة
+                        if image_url and image_url != 'nan':
+                            try:
+                                local_image_path = self.download_and_save_image(image_url, product_code, color_name)
+                                if local_image_path:
+                                    filename = os.path.basename(local_image_path)
+                                    cursor.execute('''
+                                        INSERT OR REPLACE INTO color_images
+                                        (variant_id, image_url, image_filename)
+                                        VALUES (?, ?, ?)
+                                    ''', (variant_id, local_image_path, filename))
+                                    print(f"✅ تم تحميل صورة: {product_code} - {color_name}")
+                            except Exception as img_error:
+                                print(f"⚠️ فشل تحميل صورة {product_code} - {color_name}: {img_error}")
+
+                        # إضافة Tags
+                        if tags and tags != 'nan':
+                            tag_names = [tag.strip() for tag in tags.split(',') if tag.strip()]
+                            for tag_name in tag_names:
+                                cursor.execute('SELECT id FROM tags WHERE tag_name = ?', (tag_name,))
+                                tag_result = cursor.fetchone()
+                                if tag_result:
+                                    cursor.execute('''
+                                        INSERT OR IGNORE INTO product_tags (product_id, tag_id)
+                                        VALUES (?, ?)
+                                    ''', (base_product_id, tag_result[0]))
+
+                        success_count += 1
+
+                        # commit كل 10 منتجات لتوفير الذاكرة
+                        if success_count % 10 == 0:
+                            conn.commit()
+                            print(f"📦 تم حفظ {success_count} منتج حتى الآن")
+
+                    except Exception as e:
                         failed_products.append({
                             'row': index,
-                            'product_code': product_code,
-                            'error': 'Missing required data (Product Code, Brand Name, or Color Name)'
+                            'product_code': str(row.get('Product Code', 'Unknown')),
+                            'color': str(row.get('Color Name', 'Unknown')),
+                            'error': str(e)
                         })
+                        print(f"❌ خطأ في الصف {index}: {str(e)}")
                         continue
-                    
-                    # البحث عن أو إنشاء Brand
-                    cursor.execute('SELECT id FROM brands WHERE brand_name = ?', (brand_name,))
-                    brand_result = cursor.fetchone()
-                    if not brand_result:
-                        cursor.execute('INSERT INTO brands (brand_name) VALUES (?)', (brand_name,))
-                        brand_id = cursor.lastrowid
-                        created_brands.append(brand_name)
-                        print(f"✅ تم إنشاء براند جديد: {brand_name}")
-                    else:
-                        brand_id = brand_result[0]
-                    
-                    # البحث عن أو إنشاء Product Type
-                    cursor.execute('SELECT id FROM product_types WHERE type_name = ?', (product_type_name,))
-                    type_result = cursor.fetchone()
-                    if not type_result:
-                        cursor.execute('INSERT INTO product_types (type_name) VALUES (?)', (product_type_name,))
-                        product_type_id = cursor.lastrowid
-                        created_types.append(product_type_name)
-                        print(f"✅ تم إنشاء نوع منتج جديد: {product_type_name}")
-                    else:
-                        product_type_id = type_result[0]
-                    
-                    # البحث عن أو إنشاء Color
-                    cursor.execute('SELECT id FROM colors WHERE color_name = ?', (color_name,))
-                    color_result = cursor.fetchone()
-                    if not color_result:
-                        # إنشاء لون جديد مع كود افتراضي
-                        default_color_codes = {
-                            'black': '#000000', 'white': '#FFFFFF', 'red': '#FF0000',
-                            'blue': '#0000FF', 'green': '#008000', 'yellow': '#FFFF00',
-                            'brown': '#8B4513', 'pink': '#FFC0CB', 'purple': '#800080',
-                            'orange': '#FFA500', 'gray': '#808080', 'grey': '#808080',
-                            'gold': '#FFD700', 'silver': '#C0C0C0', 'navy': '#000080',
-                            'beige': '#F5F5DC', 'maroon': '#800000'
-                        }
-                        color_code = default_color_codes.get(color_name.lower(), '#FFFFFF')
-                        
-                        cursor.execute('INSERT INTO colors (color_name, color_code) VALUES (?, ?)', 
-                                     (color_name, color_code))
-                        color_id = cursor.lastrowid
-                        created_colors.append(color_name)
-                        print(f"✅ تم إنشاء لون جديد: {color_name} ({color_code})")
-                    else:
-                        color_id = color_result[0]
-                    
-                    # إنشاء أو تحديث المنتج الأساسي
-                    product_key = f"{product_code}_{brand_id}"
-                    if product_key not in processed_products:
-                        # التحقق من وجود المنتج
-                        cursor.execute('''
-                            SELECT id FROM base_products 
-                            WHERE product_code = ? AND brand_id = ? AND trader_category = ?
-                        ''', (product_code, brand_id, row['Category']))
-                        
-                        existing_product = cursor.fetchone()
-                        
-                        if existing_product:
-                            base_product_id = existing_product[0]
-                            # تحديث بيانات المنتج الموجود
-                            cursor.execute('''
-                                UPDATE base_products 
-                                SET product_type_id = ?, product_size = ?, 
-                                    wholesale_price = ?, retail_price = ?
-                                WHERE id = ?
-                            ''', (product_type_id, row.get('Size', ''), 
-                                  float(row['Wholesale Price']), float(row['Retail Price']), 
-                                  base_product_id))
-                        else:
-                            # إنشاء منتج جديد
-                            cursor.execute('''
-                                INSERT INTO base_products 
-                                (product_code, brand_id, product_type_id, trader_category, 
-                                 product_size, wholesale_price, retail_price, supplier_id)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                            ''', (product_code, brand_id, product_type_id, row['Category'],
-                                  row.get('Size', ''), float(row['Wholesale Price']), 
-                                  float(row['Retail Price']), 1))
-                            base_product_id = cursor.lastrowid
-                        
-                        processed_products[product_key] = base_product_id
-                    else:
-                        base_product_id = processed_products[product_key]
-                    
-                    # إضافة أو تحديث متغير اللون
-                    stock = int(row.get('Stock', 0))
-                    cursor.execute('''
-                        SELECT id FROM product_variants 
-                        WHERE base_product_id = ? AND color_id = ?
-                    ''', (base_product_id, color_id))
-                    
-                    existing_variant = cursor.fetchone()
-                    
-                    if existing_variant:
-                        # تحديث المخزون الموجود
-                        variant_id = existing_variant[0]
-                        cursor.execute('''
-                            UPDATE product_variants 
-                            SET current_stock = ?
-                            WHERE id = ?
-                        ''', (stock, variant_id))
-                    else:
-                        # إنشاء متغير جديد
-                        cursor.execute('''
-                            INSERT INTO product_variants 
-                            (base_product_id, color_id, current_stock)
-                            VALUES (?, ?, ?)
-                        ''', (base_product_id, color_id, stock))
-                        variant_id = cursor.lastrowid
-                    
-                    # إضافة أو تحديث الصورة
-                    image_url = row.get('Image URL', '').strip()
-                    if image_url:
-                        try:
-                            local_image_path = self.download_and_save_image(image_url, product_code, color_name)
-                            if local_image_path:
-                                filename = os.path.basename(local_image_path)
-                                cursor.execute('''
-                                    INSERT OR REPLACE INTO color_images 
-                                    (variant_id, image_url, image_filename)
-                                    VALUES (?, ?, ?)
-                                ''', (variant_id, local_image_path, filename))
-                                print(f"✅ تم تحميل صورة: {product_code} - {color_name}")
-                        except Exception as img_error:
-                            print(f"⚠️ فشل تحميل صورة {product_code} - {color_name}: {img_error}")
-                    
-                    # إضافة Tags (فقط للمنتج الأساسي مرة واحدة)
-                    tags = row.get('Tags', '').strip()
-                    if tags and product_key not in [p for p in processed_products.keys() if p.startswith(product_code)][:-1]:
-                        tag_names = [tag.strip() for tag in tags.split(',') if tag.strip()]
-                        for tag_name in tag_names:
-                            cursor.execute('SELECT id FROM tags WHERE tag_name = ?', (tag_name,))
-                            tag_result = cursor.fetchone()
-                            if tag_result:
-                                cursor.execute('''
-                                    INSERT OR IGNORE INTO product_tags (product_id, tag_id)
-                                    VALUES (?, ?)
-                                ''', (base_product_id, tag_result[0]))
-                    
-                    success_count += 1
-                    
-                except Exception as e:
-                    failed_products.append({
-                        'row': index,
-                        'product_code': row.get('Product Code', 'Unknown'),
-                        'color': row.get('Color Name', 'Unknown'),
-                        'error': str(e)
-                    })
-                    print(f"❌ خطأ في الصف {index}: {str(e)}")
-                    continue
-            
+
+                # commit بعد كل دفعة
+                conn.commit()
+                print(f"✅ تم الانتهاء من الدفعة {batch_start + 1}-{batch_end}")
+
             conn.commit()
             conn.close()
-            
+
             return {
                 'success': True,
                 'success_count': success_count,
@@ -1504,7 +1540,7 @@ class StockDatabase:
                 'created_colors': list(set(created_colors)),
                 'created_types': list(set(created_types))
             }
-            
+
         except Exception as e:
             conn.rollback()
             conn.close()
