@@ -1480,7 +1480,7 @@ class StockDatabase:
                             variant_id = cursor.lastrowid
 
                         # إضافة أو تحديث الصورة
-                        if image_url and image_url != 'nan':
+                        if image_url and image_url not in ['nan', 'NaN', '', 'null']:
                             try:
                                 local_image_path = self.download_and_save_image(image_url, product_code, color_name)
                                 if local_image_path:
@@ -1495,7 +1495,7 @@ class StockDatabase:
                                 print(f"⚠️ فشل تحميل صورة {product_code} - {color_name}: {img_error}")
 
                         # إضافة Tags
-                        if tags and tags != 'nan':
+                        if tags and tags not in ['nan', 'NaN', '', 'null']:
                             tag_names = [tag.strip() for tag in tags.split(',') if tag.strip()]
                             for tag_name in tag_names:
                                 cursor.execute('SELECT id FROM tags WHERE tag_name = ?', (tag_name,))
@@ -1523,11 +1523,24 @@ class StockDatabase:
                         print(f"❌ خطأ في الصف {index}: {str(e)}")
                         continue
 
-                # commit بعد كل دفعة
+                # commit قوي بعد كل دفعة
                 conn.commit()
+                
+                # فحص إضافي لضمان حفظ البيانات
+                if hasattr(conn, 'execute'):
+                    cursor.execute('PRAGMA synchronous = FULL')
+                    cursor.execute('PRAGMA journal_mode = WAL')
+                
                 print(f"✅ تم الانتهاء من الدفعة {batch_start + 1}-{batch_end}")
 
+            # commit نهائي
             conn.commit()
+            
+            # فحص البيانات النهائي قبل إغلاق الاتصال
+            cursor.execute("SELECT COUNT(*) FROM base_products")
+            final_product_count = cursor.fetchone()[0]
+            print(f"📊 إجمالي المنتجات في قاعدة البيانات بعد الانتهاء: {final_product_count}")
+            
             conn.close()
 
             return {
@@ -1542,6 +1555,7 @@ class StockDatabase:
             }
 
         except Exception as e:
+            print(f"❌ خطأ عام في معالجة البيانات: {e}")
             conn.rollback()
             conn.close()
             return {
@@ -1550,6 +1564,7 @@ class StockDatabase:
                 'success_count': 0,
                 'failed_count': len(excel_data)
             }
+
 # اختبار قاعدة البيانات المحدثة
 if __name__ == "__main__":
     db = StockDatabase()
