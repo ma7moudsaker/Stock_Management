@@ -1,0 +1,290 @@
+import dropbox
+import json
+import sqlite3
+from datetime import datetime
+import os
+import requests
+
+class DropboxOAuthBackup:
+    def __init__(self):
+        self.app_key = os.getenv('oh7uq5cnc3y6guy')
+        self.app_secret = os.getenv('tf2ge1aymkr64sa')
+        self.refresh_token = os.getenv('9lmh_0xel9QAAAAAAAAAAcTUcQzyL-31zTJKffBvxua5DbZ4-Om5hkaPW-yhdgZR')
+        self.access_token = None
+        self.dbx = None
+        self.max_backups = 10
+        
+        if self.refresh_token and self.app_key and self.app_secret:
+            self.refresh_access_token()
+        else:
+            print("⚠️ مطلوب DROPBOX_APP_KEY, DROPBOX_APP_SECRET, DROPBOX_REFRESH_TOKEN")
+    
+    def refresh_access_token(self):
+        """تجديد Access Token باستخدام Refresh Token"""
+        try:
+            url = 'https://api.dropboxapi.com/oauth2/token'
+            data = {
+                'grant_type': 'refresh_token',
+                'refresh_token': self.refresh_token,
+                'client_id': self.app_key,
+                'client_secret': self.app_secret
+            }
+            
+            response = requests.post(url, data=data)
+            response.raise_for_status()
+            
+            token_data = response.json()
+            self.access_token = token_data['access_token']
+            self.dbx = dropbox.Dropbox(self.access_token)
+            
+            print("✅ تم تجديد Dropbox Access Token بنجاح")
+            return True
+            
+        except Exception as e:
+            print(f"❌ فشل في تجديد Access Token: {e}")
+            return False
+    
+    def ensure_valid_token(self):
+        """التأكد من صحة التوكن قبل أي عملية"""
+        if not self.dbx:
+            return self.refresh_access_token()
+        
+        try:
+            # اختبار بسيط للتوكن
+            self.dbx.users_get_current_account()
+            return True
+        except dropbox.exceptions.AuthError:
+            print("🔄 انتهت صلاحية التوكن - تجديد...")
+            return self.refresh_access_token()
+        except Exception:
+            return False
+    
+    def export_database_to_json(self):
+        """تصدير قاعدة البيانات لـ JSON"""
+        try:
+            conn = sqlite3.connect('stock_management.db')
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            backup_data = {
+                'backup_date': datetime.now().isoformat(),
+                'version': '2.0',
+                'source': 'dropbox_oauth_backup',
+                'app_info': {
+                    'name': 'Stock Management System',
+                    'backup_type': 'full_database'
+                },
+                'tables': {}
+            }
+            
+            important_tables = [
+                'brands', 'colors', 'product_types', 'trader_categories',
+                'suppliers', 'tags', 'base_products', 'product_variants',
+                'color_images', 'product_tags'
+            ]
+            
+            total_records = 0
+            for table_name in important_tables:
+                try:
+                    cursor.execute(f"SELECT * FROM {table_name}")
+                    rows = cursor.fetchall()
+                    backup_data['tables'][table_name] = [dict(row) for row in rows]
+                    print(f"✅ تم تصدير {len(rows)} سجل من جدول {table_name}")
+                    total_records += len(rows)
+                except Exception as e:
+                    print(f"⚠️ تخطي جدول {table_name}: {e}")
+            
+            conn.close()
+            print(f"📊 إجمالي السجلات المُصدرة: {total_records}")
+            return backup_data
+            
+        except Exception as e:
+            print(f"❌ خطأ في تصدير قاعدة البيانات: {e}")
+            return None
+    
+    def create_backup(self):
+        """إنشاء نسخة احتياطية مع تجديد تلقائي للتوكن"""
+        print("🔄 بدء إنشاء نسخة احتياطية في Dropbox...")
+        
+        if not self.ensure_valid_token():
+            print("❌ فشل في الاتصال بـ Dropbox - حفظ محلياً")
+            return self.create_local_backup()
+        
+        try:
+            backup_data = self.export_database_to_json()
+            if not backup_data:
+                return False
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f'stock_backup_{timestamp}.json'
+            
+            json_content = json.dumps(backup_data, ensure_ascii=False, indent=2)
+            content_size = len(json_content.encode('utf-8'))
+            
+            print(f"📦 حجم النسخة الاحتياطية: {content_size / 1024:.1f} KB")
+            
+            self.dbx.files_upload(
+                json_content.encode('utf-8'),
+                f'/{filename}',
+                mode=dropbox.files.WriteMode.overwrite
+            )
+            
+            print(f"✅ تم رفع النسخة الاحتياطية بنجاح: {filename}")
+            self.cleanup_old_backups()
+            return True
+            
+        except dropbox.exceptions.AuthError:
+            print("🔄 خطأ في المصادقة - محاولة تجديد التوكن...")
+            if self.refresh_access_token():
+                return self.create_backup()  # إعادة المحاولة
+            else:
+                return self.create_local_backup()
+        except Exception as e:
+            print(f"❌ خطأ عام: {e}")
+            return self.create_local_backup()
+    
+    def list_backups(self):
+        """قائمة النسخ الاحتياطية مع تجديد تلقائي للتوكن"""
+        if not self.ensure_valid_token():
+            return []
+        
+        try:
+            result = self.dbx.files_list_folder('')
+            backups = []
+            
+            for entry in result.entries:
+                if isinstance(entry, dropbox.files.FileMetadata) and entry.name.startswith('stock_backup_'):
+                    backups.append({
+                        'name': entry.name,
+                        'size': entry.size,
+                        'modified': entry.server_modified.isoformat() if entry.server_modified else 'غير محدد',
+                        'path': entry.path_display
+                    })
+            
+            backups.sort(key=lambda x: x['name'], reverse=True)
+            return backups
+            
+        except dropbox.exceptions.AuthError:
+            print("🔄 خطأ في المصادقة - محاولة تجديد التوكن...")
+            if self.refresh_access_token():
+                return self.list_backups()  # إعادة المحاولة
+            return []
+        except Exception as e:
+            print(f"❌ خطأ في جلب قائمة النسخ: {e}")
+            return []
+    
+    def restore_from_backup(self, backup_name=None):
+        """استرجاع من نسخة احتياطية"""
+        if not self.ensure_valid_token():
+            print("❌ Dropbox غير متصل")
+            return False
+        
+        try:
+            if not backup_name:
+                backups = self.list_backups()
+                if not backups:
+                    print("❌ لا توجد نسخ احتياطية")
+                    return False
+                backup_name = backups[0]['name']
+            
+            print(f"🔄 استرجاع من النسخة: {backup_name}")
+            
+            metadata, response = self.dbx.files_download(f'/{backup_name}')
+            backup_content = response.content.decode('utf-8')
+            backup_data = json.loads(backup_content)
+            
+            success = self.restore_data_to_database(backup_data)
+            
+            if success:
+                print(f"✅ تم استرجاع البيانات بنجاح من: {backup_name}")
+            else:
+                print(f"❌ فشل في استرجاع البيانات")
+            
+            return success
+            
+        except Exception as e:
+            print(f"❌ خطأ في الاسترجاع: {e}")
+            return False
+    
+    def restore_data_to_database(self, backup_data):
+        """استرجاع البيانات لقاعدة البيانات"""
+        try:
+            conn = sqlite3.connect('stock_management.db')
+            cursor = conn.cursor()
+            
+            # مسح البيانات الحالية
+            for table_name in backup_data['tables'].keys():
+                try:
+                    cursor.execute(f"DELETE FROM {table_name}")
+                    print(f"🗑️ تم مسح جدول {table_name}")
+                except:
+                    pass
+            
+            # استرجاع البيانات
+            total_restored = 0
+            for table_name, rows in backup_data['tables'].items():
+                if not rows:
+                    continue
+                
+                try:
+                    columns = list(rows.keys())
+                    placeholders = ', '.join(['?' for _ in columns])
+                    insert_sql = f"INSERT OR REPLACE INTO {table_name} ({', '.join(columns)}) VALUES ({placeholders})"
+                    
+                    for row in rows:
+                        values = [row[col] for col in columns]
+                        cursor.execute(insert_sql, values)
+                    
+                    print(f"✅ تم استرجاع {len(rows)} سجل لجدول {table_name}")
+                    total_restored += len(rows)
+                    
+                except Exception as e:
+                    print(f"⚠️ خطأ في استرجاع جدول {table_name}: {e}")
+            
+            conn.commit()
+            conn.close()
+            
+            print(f"🎉 تم استرجاع {total_restored} سجل بنجاح!")
+            return True
+            
+        except Exception as e:
+            print(f"❌ خطأ في استرجاع البيانات: {e}")
+            if 'conn' in locals():
+                conn.rollback()
+                conn.close()
+            return False
+    
+    def cleanup_old_backups(self):
+        """حذف النسخ القديمة الزائدة"""
+        try:
+            backups = self.list_backups()
+            
+            if len(backups) > self.max_backups:
+                old_backups = backups[self.max_backups:]
+                
+                for backup in old_backups:
+                    self.dbx.files_delete_v2(backup['path'])
+                    print(f"🗑️ حذف نسخة قديمة: {backup['name']}")
+                    
+        except Exception as e:
+            print(f"⚠️ خطأ في تنظيف النسخ القديمة: {e}")
+    
+    def create_local_backup(self):
+        """نسخة احتياطية محلية كـ fallback"""
+        try:
+            backup_data = self.export_database_to_json()
+            if not backup_data:
+                return False
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f'local_backup_{timestamp}.json'
+            
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(backup_data, f, ensure_ascii=False, indent=2)
+            
+            print(f"✅ نسخة احتياطية محلية: {filename}")
+            return True
+            
+        except Exception as e:
+            print(f"❌ فشل النسخ الاحتياطي المحلي: {e}")
+            return False

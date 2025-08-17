@@ -5,7 +5,7 @@ from datetime import datetime
 from database import StockDatabase
 import pandas as pd
 from io import BytesIO
-from dropbox_backup import DropboxBackup
+from dropbox_oauth_backup import DropboxOAuthBackup
 app = Flask(__name__)
 
 # إعدادات الأمان والإنتاج
@@ -36,7 +36,7 @@ import threading
 import time
 
 # إنشاء نظام النسخ الاحتياطية
-backup_system = DropboxBackup()
+backup_system = DropboxOAuthBackup()
 
 # متغير للتأكد من تشغيل الكود مرة واحدة فقط
 startup_completed = False
