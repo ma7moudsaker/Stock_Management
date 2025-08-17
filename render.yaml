@@ -10,3 +10,5 @@ services:
         value: stock-management-render-key-2025-secure
       - key: FLASK_ENV
         value: production
+      - key: GOOGLE_CREDENTIALS_BASE64
+        value: [base64_encoded_credentials_here]

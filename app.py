@@ -5,7 +5,7 @@ from datetime import datetime
 from database import StockDatabase
 import pandas as pd
 from io import BytesIO
-
+from google_backup import GoogleDriveBackup
 app = Flask(__name__)
 
 # إعدادات الأمان والإنتاج
@@ -31,6 +31,90 @@ if not os.getenv('DATABASE_URL'):
     db.add_default_data()
     print("✅ Default data added!")
 
+import atexit
+import threading
+import time
+
+# إنشاء نظام النسخ الاحتياطية
+backup_system = GoogleDriveBackup()
+
+# متغير للتأكد من تشغيل الكود مرة واحدة فقط
+startup_completed = False
+
+@app.before_request
+def restore_on_startup():
+    """استرجاع البيانات عند بدء التطبيق - Flask 2.3+ compatible"""
+    global startup_completed
+    
+    if not startup_completed:
+        try:
+            print("🔄 تشغيل عملية الاستعداد لأول مرة...")
+            
+            # فحص إذا كانت قاعدة البيانات فارغة
+            conn = db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM brands")
+            brand_count = cursor.fetchone()[0]
+            conn.close()
+            
+            if brand_count == 0:
+                print("🔄 قاعدة البيانات فارغة - إضافة البيانات الافتراضية...")
+                db.add_default_data()
+                print("✅ تم إضافة البيانات الافتراضية")
+                
+        except Exception as e:
+            print(f"خطأ في عملية البدء: {e}")
+            db.add_default_data()
+        
+        startup_completed = True
+        print("✅ تم الانتهاء من عملية البدء")
+
+def auto_backup():
+    """نسخ احتياطية تلقائية كل ساعة"""
+    while True:
+        time.sleep(3600)  # كل ساعة
+        print("🔄 إنشاء نسخة احتياطية تلقائية...")
+        backup_system.create_backup()
+
+# بدء النسخ الاحتياطية التلقائية
+backup_thread = threading.Thread(target=auto_backup)
+backup_thread.daemon = True
+backup_thread.start()
+print("✅ تم بدء نظام النسخ الاحتياطية التلقائية")
+
+# نسخة احتياطية عند إغلاق التطبيق
+@atexit.register
+def backup_on_exit():
+    print("🔄 إنشاء نسخة احتياطية قبل الإغلاق...")
+    backup_system.create_backup()
+
+# routes الجديدة للنسخ الاحتياطية
+@app.route('/admin/backup')
+def backup_page():
+    """صفحة إدارة النسخ الاحتياطية"""
+    backups = backup_system.list_backups()
+    return render_template('backup_system.html', backups=backups)
+
+@app.route('/admin/backup/create')
+def create_backup():
+    """إنشاء نسخة احتياطية فورية"""
+    success = backup_system.create_backup()
+    if success:
+        flash('تم إنشاء النسخة الاحتياطية بنجاح!', 'success')
+    else:
+        flash('خطأ في إنشاء النسخة الاحتياطية', 'error')
+    
+    return redirect(url_for('backup_page'))
+
+@app.route('/admin/backup/status')
+def backup_status():
+    """حالة نظام النسخ الاحتياطية"""
+    status = {
+        'drive_connected': backup_system.drive_service is not None,
+        'folder_id': backup_system.backup_folder_id,
+        'backup_count': len(backup_system.list_backups())
+    }
+    return jsonify(status)
 
 @app.route('/')
 def dashboard():
