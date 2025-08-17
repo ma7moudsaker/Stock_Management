@@ -5,7 +5,7 @@ from datetime import datetime
 from database import StockDatabase
 import pandas as pd
 from io import BytesIO
-from google_backup import GoogleDriveBackup
+from dropbox_backup import DropboxBackup
 app = Flask(__name__)
 
 # إعدادات الأمان والإنتاج
@@ -36,19 +36,18 @@ import threading
 import time
 
 # إنشاء نظام النسخ الاحتياطية
-backup_system = GoogleDriveBackup()
+backup_system = DropboxBackup()
 
 # متغير للتأكد من تشغيل الكود مرة واحدة فقط
 startup_completed = False
-
 @app.before_request
 def restore_on_startup():
-    """استرجاع البيانات عند بدء التطبيق - Flask 2.3+ compatible"""
+    """استرجاع البيانات عند بدء التطبيق"""
     global startup_completed
     
     if not startup_completed:
         try:
-            print("🔄 تشغيل عملية الاستعداد لأول مرة...")
+            print("🔄 فحص الحاجة للاستعادة...")
             
             # فحص إذا كانت قاعدة البيانات فارغة
             conn = db.get_connection()
@@ -58,9 +57,13 @@ def restore_on_startup():
             conn.close()
             
             if brand_count == 0:
-                print("🔄 قاعدة البيانات فارغة - إضافة البيانات الافتراضية...")
-                db.add_default_data()
-                print("✅ تم إضافة البيانات الافتراضية")
+                print("🔄 قاعدة البيانات فارغة - محاولة استرجاع من Dropbox...")
+                success = backup_system.restore_from_backup()
+                if not success:
+                    print("⚠️ فشل الاستعادة - إضافة البيانات الافتراضية...")
+                    db.add_default_data()
+            else:
+                print(f"✅ قاعدة البيانات تحتوي على {brand_count} براند")
                 
         except Exception as e:
             print(f"خطأ في عملية البدء: {e}")
@@ -80,7 +83,7 @@ def auto_backup():
 backup_thread = threading.Thread(target=auto_backup)
 backup_thread.daemon = True
 backup_thread.start()
-print("✅ تم بدء نظام النسخ الاحتياطية التلقائية")
+print("✅ تم بدء نظام النسخ الاحتياطية التلقائية (Dropbox)")
 
 # نسخة احتياطية عند إغلاق التطبيق
 @atexit.register
@@ -93,14 +96,14 @@ def backup_on_exit():
 def backup_page():
     """صفحة إدارة النسخ الاحتياطية"""
     backups = backup_system.list_backups()
-    return render_template('backup_system.html', backups=backups)
+    return render_template('backup_system.html', backups=backups, service="Dropbox")
 
 @app.route('/admin/backup/create')
 def create_backup():
     """إنشاء نسخة احتياطية فورية"""
     success = backup_system.create_backup()
     if success:
-        flash('تم إنشاء النسخة الاحتياطية بنجاح!', 'success')
+        flash('تم إنشاء النسخة الاحتياطية في Dropbox بنجاح!', 'success')
     else:
         flash('خطأ في إنشاء النسخة الاحتياطية', 'error')
     
@@ -109,12 +112,25 @@ def create_backup():
 @app.route('/admin/backup/status')
 def backup_status():
     """حالة نظام النسخ الاحتياطية"""
+    backups = backup_system.list_backups()
     status = {
-        'drive_connected': backup_system.drive_service is not None,
-        'folder_id': backup_system.backup_folder_id,
-        'backup_count': len(backup_system.list_backups())
+        'service': 'Dropbox',
+        'connected': backup_system.dbx is not None,
+        'backup_count': len(backups),
+        'latest_backup': backups[0]['name'] if backups else 'لا توجد نسخ'
     }
     return jsonify(status)
+
+@app.route('/admin/backup/restore/<backup_name>')
+def restore_backup(backup_name):
+    """استرجاع نسخة احتياطية محددة"""
+    success = backup_system.restore_from_backup(backup_name)
+    if success:
+        flash(f'تم استرجاع البيانات من {backup_name} بنجاح!', 'success')
+    else:
+        flash('فشل في استرجاع البيانات', 'error')
+    
+    return redirect(url_for('backup_page'))
 
 @app.route('/')
 def dashboard():
