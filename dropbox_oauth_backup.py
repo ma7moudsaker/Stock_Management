@@ -251,9 +251,6 @@ class DropboxOAuthBackup:
             from database import StockDatabase
             db = StockDatabase()
             
-            # مسح البيانات الحالية
-            self._clear_all_tables(db)
-
             # استرجاع كل جدول
             tables_order = [
                 'brands', 'colors', 'product_types', 'trader_categories', 
