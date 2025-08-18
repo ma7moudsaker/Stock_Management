@@ -598,24 +598,32 @@ def delete_product(product_id):
 # صفحات الجرد الشامل مع المقاس والـ Tags
 @app.route('/inventory_management')
 def inventory_management():
-    """صفحة الجرد الشاملة مع المقاس والـ Tags"""
+    """صفحة الجرد الشاملة مع فلتر المخزون المتوفر كفلتر افتراضي"""
     search_term = request.args.get('search', '')
     brand_filter = request.args.get('brand', '')
     category_filter = request.args.get('category', '')
     
-    inventory_data = db.get_all_products_for_inventory(search_term, brand_filter, category_filter)
+    # 🎯 إضافة معامل لإظهار جميع المنتجات أو المتوفرة فقط
+    show_all = request.args.get('show_all', 'false').lower() == 'true'
+    in_stock_only = not show_all  # الافتراضي: إظهار المتوفرة فقط
+    
+    inventory_data = db.get_all_products_for_inventory(
+        search_term, brand_filter, category_filter, in_stock_only
+    )
+    
     summary = db.get_inventory_summary()
     brands = db.get_brands_for_filter()
     categories = db.get_categories_for_filter()
     
-    return render_template('inventory_management.html', 
+    return render_template('inventory_management.html',
                          inventory_data=inventory_data,
                          summary=summary,
                          brands=brands,
                          categories=categories,
                          search_term=search_term,
                          brand_filter=brand_filter,
-                         category_filter=category_filter)
+                         category_filter=category_filter,
+                         show_all=show_all)
 
 @app.route('/update_inventory', methods=['POST'])
 def update_inventory():
@@ -653,12 +661,16 @@ def update_inventory():
 
 @app.route('/inventory_search')
 def inventory_search():
-    """البحث في صفحة الجرد - AJAX"""
+    """البحث في صفحة الجرد - AJAX مع فلتر المخزون"""
     search_term = request.args.get('q', '')
     brand_filter = request.args.get('brand', '')
     category_filter = request.args.get('category', '')
+    show_all = request.args.get('show_all', 'false').lower() == 'true'
+    in_stock_only = not show_all
     
-    inventory_data = db.get_all_products_for_inventory(search_term, brand_filter, category_filter)
+    inventory_data = db.get_all_products_for_inventory(
+        search_term, brand_filter, category_filter, in_stock_only
+    )
     
     results = []
     for item in inventory_data:
@@ -670,19 +682,17 @@ def inventory_search():
             'product_code': product[1],
             'brand': product[2],
             'type': product[3],
-            'category': product[4],
-            'size': product[5],
+            'category': product,
+            'size': product,
             'total_stock': item['total_stock'],
             'tags': [tag[1] for tag in item['tags']],
-            'color_variants': [
-                {
-                    'variant_id': cv[0],
-                    'color_id': cv[1],
-                    'color_name': cv[2],
-                    'color_code': cv[3],
-                    'current_stock': cv[4]
-                } for cv in color_variants
-            ]
+            'color_variants': [{
+                'variant_id': cv,
+                'color_id': cv[1],
+                'color_name': cv[2],
+                'color_code': cv[3],
+                'current_stock': cv
+            } for cv in color_variants]
         })
     
     return jsonify({'inventory_data': results})
