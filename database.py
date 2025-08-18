@@ -1173,20 +1173,20 @@ class StockDatabase:
             }
 
 
-    def get_all_products_for_inventory(self, search_term='', brand_filter='', category_filter='', in_stock_only=True):
-        """جلب جميع المنتجات للجرد الشامل مع فلتر المخزون المتوفر بشكل افتراضي"""
+    def get_all_products_for_inventory(self, search_term='', brand_filter='', category_filter=''):
+        """جلب جميع المنتجات للجرد الشامل مع تفاصيل كل لون والصور"""
         conn = self.get_connection()
         cursor = conn.cursor()
         
         base_query = '''
-        SELECT
-            bp.id, bp.product_code, b.brand_name, pt.type_name,
-            bp.trader_category, bp.product_size, bp.wholesale_price,
-            bp.retail_price, bp.created_date
-        FROM base_products bp
-        LEFT JOIN brands b ON bp.brand_id = b.id
-        LEFT JOIN product_types pt ON bp.product_type_id = pt.id
-        WHERE 1=1
+            SELECT 
+                bp.id, bp.product_code, b.brand_name, pt.type_name,
+                bp.trader_category, bp.product_size, bp.wholesale_price, 
+                bp.retail_price, bp.created_date
+            FROM base_products bp
+            LEFT JOIN brands b ON bp.brand_id = b.id
+            LEFT JOIN product_types pt ON bp.product_type_id = pt.id
+            WHERE 1=1
         '''
         
         params = []
@@ -1204,16 +1204,6 @@ class StockDatabase:
             base_query += ' AND bp.trader_category = ?'
             params.append(category_filter)
         
-        # 🎯 الفلتر الجديد: إظهار المنتجات المتوفرة فقط (Total Stock > 0)
-        if in_stock_only:
-            base_query += ''' AND (
-                EXISTS (
-                    SELECT 1 FROM product_variants pv 
-                    WHERE pv.base_product_id = bp.id 
-                    AND pv.current_stock > 0
-                )
-            )'''
-        
         base_query += ' ORDER BY b.brand_name, bp.product_code'
         
         cursor.execute(base_query, params)
@@ -1228,14 +1218,11 @@ class StockDatabase:
                 LEFT JOIN color_images ci ON pv.id = ci.variant_id
                 WHERE pv.base_product_id = ?
                 ORDER BY c.color_name
-            ''', (product[0],))  # 🔧 هنا التصحيح: استخدم product بدلاً من product
+            ''', (product[0],))
             
             color_variants = cursor.fetchall()
-            
-            # تصحيح حساب total_stock - استخراج العنصر الرابع (current_stock) من كل tuple
-            total_stock = sum([cv for cv in color_variants])
-            
-            product_tags = self.get_product_tags(product)
+            total_stock = sum([cv[4] for cv in color_variants])
+            product_tags = self.get_product_tags(product[0])
             
             inventory_data.append({
                 'product': product,
