@@ -226,38 +226,108 @@ class DropboxOAuthBackup:
             return []
     
     def restore_from_backup(self, backup_name=None):
-        """استرجاع من نسخة احتياطية"""
-        if not self.ensure_valid_token():
-            print("❌ Dropbox غير متصل")
-            return False
-        
+        """استرجاع البيانات من Dropbox"""
         try:
+            if not self.dbx:
+                print("❌ غير متصل بـ Dropbox")
+                return False
+
+            # اختيار النسخة الاحتياطية
             if not backup_name:
                 backups = self.list_backups()
                 if not backups:
-                    print("❌ لا توجد نسخ احتياطية")
+                    print("❌ لا توجد نسخ احتياطية متوفرة")
                     return False
                 backup_name = backups[0]['name']
-            
+
+            backup_path = f"/{backup_name}"
             print(f"🔄 استرجاع من النسخة: {backup_name}")
+
+            # تحميل الملف من Dropbox
+            _, response = self.dbx.files_download(backup_path)
+            backup_data = json.loads(response.content.decode('utf-8'))
+
+            # استرجاع البيانات
+            from database import StockDatabase
+            db = StockDatabase()
             
-            metadata, response = self.dbx.files_download(f'/{backup_name}')
-            backup_content = response.content.decode('utf-8')
-            backup_data = json.loads(backup_content)
+            # مسح البيانات الحالية
+            self._clear_all_tables(db)
+
+            # استرجاع كل جدول
+            tables_order = [
+                'brands', 'colors', 'product_types', 'trader_categories', 
+                'suppliers', 'tags', 'base_products', 'product_variants', 
+                'color_images', 'product_tags'
+            ]
+
+            total_restored = 0
+            for table_name in tables_order:
+                    if table_name in backup_data.get('tables', {}):  # ✅ صحيح
+                        table_data = backup_data['tables'][table_name]  # ✅ صحيح
+                    
+                    # 🔧 هنا التصحيح المطلوب
+                    if isinstance(table_data, list):
+                        # إذا كانت البيانات قائمة، نتعامل معها مباشرة
+                        restored_count = self._restore_table_data(db, table_name, table_data)
+                    elif isinstance(table_data, dict):
+                        # إذا كانت البيانات قاموس، نحولها لقائمة
+                        rows = []
+                        for row_data in table_data.values():
+                            if isinstance(row_data, dict):
+                                rows.append(row_data)
+                        restored_count = self._restore_table_data(db, table_name, rows)
+                    else:
+                        print(f"⚠️ نوع بيانات غير مدعوم في جدول {table_name}: {type(table_data)}")
+                        continue
+                        
+                    total_restored += restored_count
+                    print(f"✅ تم استرجاع {restored_count} سجل من جدول {table_name}")
+
+            print(f"🎉 تم استرجاع {total_restored} سجل بنجاح!")
+            return True
+
+        except Exception as e:
+            print(f"❌ خطأ في استرجاع النسخة الاحتياطية: {e}")
+            return False
+        
+    def _restore_table_data(self, db, table_name, rows):
+        """استرجاع بيانات جدول واحد"""
+        if not rows:
+            return 0
             
-            success = self.restore_data_to_database(backup_data)
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        restored_count = 0
+        
+        try:
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                    
+                # إنشاء استعلام INSERT
+                columns = list(row.keys())
+                placeholders = ', '.join(['?' for _ in columns])
+                values = [row[col] for col in columns]
+                
+                query = f"INSERT INTO {table_name} ({', '.join(columns)}) VALUES ({placeholders})"
+                
+                try:
+                    cursor.execute(query, values)
+                    restored_count += 1
+                except Exception as e:
+                    print(f"⚠️ خطأ في إدراج سجل في {table_name}: {e}")
+                    continue
             
-            if success:
-                print(f"✅ تم استرجاع البيانات بنجاح من: {backup_name}")
-            else:
-                print(f"❌ فشل في استرجاع البيانات")
-            
-            return success
+            conn.commit()
+            conn.close()
+            return restored_count
             
         except Exception as e:
-            print(f"❌ خطأ في الاسترجاع: {e}")
-            return False
-    
+            print(f"❌ خطأ في استرجاع جدول {table_name}: {e}")
+            conn.close()
+            return 0
+
     def restore_data_to_database(self, backup_data):
         """استرجاع البيانات لقاعدة البيانات مع معالجة أفضل للأخطاء"""
         try:
