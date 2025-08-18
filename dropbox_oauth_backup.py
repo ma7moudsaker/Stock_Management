@@ -259,7 +259,7 @@ class DropboxOAuthBackup:
             return False
     
     def restore_data_to_database(self, backup_data):
-        """استرجاع البيانات لقاعدة البيانات"""
+        """استرجاع البيانات لقاعدة البيانات مع معالجة أفضل للأخطاء"""
         try:
             conn = sqlite3.connect('stock_management.db')
             cursor = conn.cursor()
@@ -279,17 +279,39 @@ class DropboxOAuthBackup:
                     continue
                 
                 try:
-                    columns = list(rows.keys())
-                    placeholders = ', '.join(['?' for _ in columns])
-                    insert_sql = f"INSERT OR REPLACE INTO {table_name} ({', '.join(columns)}) VALUES ({placeholders})"
-                    
-                    for row in rows:
-                        values = [row[col] for col in columns]
-                        cursor.execute(insert_sql, values)
-                    
-                    print(f"✅ تم استرجاع {len(rows)} سجل لجدول {table_name}")
-                    total_restored += len(rows)
-                    
+                    # 🎯 التحقق من نوع البيانات
+                    if isinstance(rows, list) and len(rows) > 0:
+                        # إذا كانت البيانات في شكل list of tuples، نحولها لـ list of dicts
+                        if isinstance(rows[0], (list, tuple)):
+                            # نحصل على أسماء الأعمدة من الجدول
+                            cursor.execute(f"PRAGMA table_info({table_name})")
+                            columns_info = cursor.fetchall()
+                            column_names = [col[1] for col in columns_info]
+                            
+                            # نحول البيانات لـ dicts
+                            dict_rows = []
+                            for row in rows:
+                                if len(row) <= len(column_names):
+                                    dict_rows.append(dict(zip(column_names, row)))
+                            rows = dict_rows
+                        
+                        # إذا كانت البيانات دلوقتي في شكل list of dicts
+                        if isinstance(rows[0], dict):
+                            columns = list(rows.keys())
+                            placeholders = ', '.join(['?' for _ in columns])
+                            insert_sql = f"INSERT OR REPLACE INTO {table_name} ({', '.join(columns)}) VALUES ({placeholders})"
+                            
+                            for row in rows:
+                                values = [row[col] for col in columns]
+                                cursor.execute(insert_sql, values)
+                            
+                            print(f"✅ تم استرجاع {len(rows)} سجل لجدول {table_name}")
+                            total_restored += len(rows)
+                        else:
+                            print(f"⚠️ تخطي جدول {table_name}: نوع بيانات غير مدعوم")
+                    else:
+                        print(f"⚠️ تخطي جدول {table_name}: بيانات فارغة أو غير صحيحة")
+                        
                 except Exception as e:
                     print(f"⚠️ خطأ في استرجاع جدول {table_name}: {e}")
             
@@ -305,7 +327,7 @@ class DropboxOAuthBackup:
                 conn.rollback()
                 conn.close()
             return False
-    
+        
     def cleanup_old_backups(self):
         """حذف النسخ القديمة الزائدة"""
         try:
