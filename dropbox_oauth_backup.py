@@ -13,16 +13,46 @@ class DropboxOAuthBackup:
         self.access_token = None
         self.dbx = None
         self.max_backups = 10
+                # فحص فوري للمتغيرات
+        print(f"🔍 Environment Variables Check:")
+        print(f"  - DROPBOX_APP_KEY: {'✅ موجود' if self.app_key else '❌ غير موجود'}")
+        print(f"  - DROPBOX_APP_SECRET: {'✅ موجود' if self.app_secret else '❌ غير موجود'}")  
+        print(f"  - DROPBOX_REFRESH_TOKEN: {'✅ موجود' if self.refresh_token else '❌ غير موجود'}")
         
+
         if self.refresh_token and self.app_key and self.app_secret:
             self.refresh_access_token()
         else:
             print("⚠️ مطلوب DROPBOX_APP_KEY, DROPBOX_APP_SECRET, DROPBOX_REFRESH_TOKEN")
     
+        if not all([self.app_key, self.app_secret, self.refresh_token]):
+            print("⚠️ بعض المتغيرات مفقودة - النسخ الاحتياطية ستعمل محلياً فقط")
+            self.dbx = None
+            return
+
     def refresh_access_token(self):
-        """تجديد Access Token باستخدام Refresh Token"""
+        """تجديد Access Token باستخدام Refresh Token مع تشخيص مفصل"""
         try:
+            # فحص المتغيرات البيئية أولاً
+            if not self.app_key:
+                print("❌ DROPBOX_APP_KEY غير موجود")
+                return False
+            if not self.app_secret:
+                print("❌ DROPBOX_APP_SECRET غير موجود")
+                return False
+            if not self.refresh_token:
+                print("❌ DROPBOX_REFRESH_TOKEN غير موجود")
+                return False
+            
+            print(f"🔄 محاولة تجديد التوكن...")
+            print(f"📝 App Key: {self.app_key[:8]}..." if self.app_key else "❌ App Key فارغ")
+            print(f"📝 App Secret: {self.app_secret[:8]}..." if self.app_secret else "❌ App Secret فارغ") 
+            print(f"📝 Refresh Token: {self.refresh_token[:20]}..." if self.refresh_token else "❌ Refresh Token فارغ")
+            
             url = 'https://api.dropboxapi.com/oauth2/token'
+            headers = {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
             data = {
                 'grant_type': 'refresh_token',
                 'refresh_token': self.refresh_token,
@@ -30,20 +60,42 @@ class DropboxOAuthBackup:
                 'client_secret': self.app_secret
             }
             
-            response = requests.post(url, data=data)
-            response.raise_for_status()
+            response = requests.post(url, headers=headers, data=data, timeout=30)
             
-            token_data = response.json()
-            self.access_token = token_data['access_token']
-            self.dbx = dropbox.Dropbox(self.access_token)
+            # تشخيص مفصل للاستجابة
+            print(f"📊 Response Status: {response.status_code}")
             
-            print("✅ تم تجديد Dropbox Access Token بنجاح")
-            return True
-            
+            if response.status_code == 200:
+                token_data = response.json()
+                self.access_token = token_data['access_token']
+                self.dbx = dropbox.Dropbox(self.access_token)
+                print("✅ تم تجديد Dropbox Access Token بنجاح")
+                return True
+            else:
+                print(f"❌ فشل تجديد التوكن: {response.status_code}")
+                print(f"📄 Response Text: {response.text}")
+                
+                # تحليل الأخطاء الشائعة
+                if response.status_code == 400:
+                    try:
+                        error_data = response.json()
+                        error_description = error_data.get('error_description', 'Unknown error')
+                        print(f"🔍 تفاصيل الخطأ: {error_description}")
+                        
+                        if 'invalid_grant' in error_description:
+                            print("💡 الـ Refresh Token منتهي الصلاحية أو غير صحيح")
+                        elif 'invalid_client' in error_description:
+                            print("💡 App Key أو App Secret غير صحيح")
+                            
+                    except:
+                        print("🔍 لا يمكن تحليل تفاصيل الخطأ")
+                
+                return False
+                
         except Exception as e:
-            print(f"❌ فشل في تجديد Access Token: {e}")
+            print(f"❌ خطأ في الاتصال بـ Dropbox API: {e}")
             return False
-    
+        
     def ensure_valid_token(self):
         """التأكد من صحة التوكن قبل أي عملية"""
         if not self.dbx:

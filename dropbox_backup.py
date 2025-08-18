@@ -16,8 +16,10 @@ class DropboxBackup:
             print("✅ Dropbox متصل بنجاح")
     
     def export_database_to_json(self):
-        """تصدير قاعدة البيانات لـ JSON"""
+        """تصدير قاعدة البيانات لـ JSON مع فحص دقيق للبيانات"""
         try:
+            # استخدام نفس الـ connection من StockDatabase
+            import sqlite3
             conn = sqlite3.connect('stock_management.db')
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
@@ -43,22 +45,41 @@ class DropboxBackup:
             total_records = 0
             for table_name in important_tables:
                 try:
+                    # فحص وجود الجدول أولاً
+                    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
+                    if not cursor.fetchone():
+                        print(f"⚠️ الجدول {table_name} غير موجود")
+                        continue
+                    
                     cursor.execute(f"SELECT * FROM {table_name}")
                     rows = cursor.fetchall()
                     backup_data['tables'][table_name] = [dict(row) for row in rows]
                     print(f"✅ تم تصدير {len(rows)} سجل من جدول {table_name}")
                     total_records += len(rows)
+                    
+                    # إضافة معلومات إضافية للتشخيص
+                    if table_name == 'base_products':
+                        cursor.execute("SELECT COUNT(*) FROM base_products")
+                        count = cursor.fetchone()[0]
+                        print(f"📊 إجمالي المنتجات في قاعدة البيانات: {count}")
+                        
                 except Exception as e:
                     print(f"⚠️ تخطي جدول {table_name}: {e}")
             
             conn.close()
             print(f"📊 إجمالي السجلات المُصدرة: {total_records}")
+            
+            # فحص إضافي للتأكد من وجود البيانات
+            if backup_data['tables'].get('base_products'):
+                products_count = len(backup_data['tables']['base_products'])
+                print(f"🎯 عدد المنتجات في النسخة الاحتياطية: {products_count}")
+            
             return backup_data
             
         except Exception as e:
             print(f"❌ خطأ في تصدير قاعدة البيانات: {e}")
             return None
-    
+        
     def create_backup(self):
         """إنشاء نسخة احتياطية في Dropbox"""
         print("🔄 بدء إنشاء نسخة احتياطية في Dropbox...")

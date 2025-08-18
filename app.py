@@ -723,7 +723,7 @@ def bulk_upload_excel():
                 return redirect(url_for('bulk_upload_excel'))
 
             # تحديد حد أقصى للصفوف لتجنب timeout
-            MAX_ROWS = 200
+            MAX_ROWS = 2000
             if len(df) > MAX_ROWS:
                 flash(f'الملف كبير جداً! الحد الأقصى {MAX_ROWS} صف. ملفك يحتوي على {len(df)} صف.', 'warning')
                 df = df.head(MAX_ROWS)
