@@ -1228,11 +1228,11 @@ class StockDatabase:
                 LEFT JOIN color_images ci ON pv.id = ci.variant_id
                 WHERE pv.base_product_id = ?
                 ORDER BY c.color_name
-            ''', (product,))
+            ''', (product[0],))  # 🔧 هنا التصحيح: استخدم product بدلاً من product
             
             color_variants = cursor.fetchall()
             
-            # 🔧 تصحيح حساب total_stock - استخراج العنصر الرابع (current_stock) من كل tuple
+            # تصحيح حساب total_stock - استخراج العنصر الرابع (current_stock) من كل tuple
             total_stock = sum([cv for cv in color_variants])
             
             product_tags = self.get_product_tags(product)
