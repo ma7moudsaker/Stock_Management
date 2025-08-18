@@ -307,7 +307,7 @@ class DropboxOAuthBackup:
                 placeholders = ', '.join(['?' for _ in columns])
                 values = [row[col] for col in columns]
                 
-                query = f"INSERT INTO {table_name} ({', '.join(columns)}) VALUES ({placeholders})"
+                query = f"INSERT OR REPLACE INTO {table_name} ({', '.join(columns)}) VALUES ({placeholders})"
                 
                 try:
                     cursor.execute(query, values)
