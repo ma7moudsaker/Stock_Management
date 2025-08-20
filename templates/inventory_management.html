@@ -38,29 +38,7 @@
                 <h4>📦 Stock Manager</h4>
                 <hr>
                 <ul class="nav flex-column">
-                    <!-- Main Pages -->
-                    <li class="nav-item">
-                        <a class="nav-link text-white" href="/">🏠 Dashboard</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link text-white" href="/products_new">📋 Products</a>
-                    </li>
-                    
-                    <!-- Add Products -->
-                    <li class="nav-item"><hr class="text-white"></li>
-                    <li class="nav-item">
-                        <small class="text-muted">ADD PRODUCTS</small>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link text-white" href="/add_product_new">➕ Add Single Product</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link text-white" href="/add_products_multi">➕ Add Multiple Products</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link text-white" href="/bulk_upload_excel">📊 Bulk Upload Excel</a>
-                    </li>
-                    
+
                     <!-- Inventory Management -->
                     <li class="nav-item"><hr class="text-white"></li>
                     <li class="nav-item">
@@ -69,27 +47,7 @@
                     <li class="nav-item">
                         <a class="nav-link text-white active bg-primary" href="/inventory_management">📦 Bulk Inventory</a>
                     </li>
-                    
-                    <!-- Settings -->
-                    <li class="nav-item"><hr class="text-white"></li>
-                    <li class="nav-item">
-                        <small class="text-muted">SETTINGS</small>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link text-white" href="/manage_brands">🏷️ Brands</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link text-white" href="/manage_colors">🎨 Colors</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link text-white" href="/manage_product_types">📦 Product Types</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link text-white" href="/manage_trader_categories">👥 Trader Categories</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link text-white" href="/manage_tags">🏷️ Tags</a>
-                    </li>
+
                 </ul>
             </div>
             
@@ -268,7 +226,7 @@
                                                     <button type="button" class="btn btn-outline-warning btn-sm mb-1" 
                                                             onclick="setAllToZero({{ product[0] }})" title="Set all to 0">Zero All</button>
                                                     <a href="/product_details/{{ product[0] }}" class="btn btn-outline-primary btn-sm" 
-                                                       title="View details">👁️ Details</a>
+                                                       title="View details">   </a>
                                                 </div>
                                             </td>
                                         </tr>
