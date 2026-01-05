@@ -792,6 +792,127 @@ def bulk_upload_excel():
     # عرض الصفحة
     return render_template('bulk_upload_excel.html')
 
+@app.route('/export_products', methods=['GET', 'POST'])
+def export_products():
+    """صفحة تصدير المنتجات مع فلاتر متعددة"""
+    if request.method == 'POST':
+        try:
+            # جلب الفلاتر من الـ form
+            selected_brands = request.form.getlist('brands')
+            selected_categories = request.form.getlist('categories')
+            selected_types = request.form.getlist('product_types')
+            selected_colors = request.form.getlist('colors')
+            selected_products = request.form.getlist('product_codes')
+            stock_filter = request.form.get('stock_filter', 'all')
+            
+            # جلب كل المنتجات
+            all_products = db.get_products_with_color_images('')
+            
+            # تطبيق الفلاتر
+            filtered_data = []
+            
+            for product in all_products:
+                product_id = product[0]
+                product_code = product[1]
+                brand_name = product[2]
+                product_type = product[3]
+                category = product[4]
+                size = product[5]
+                wholesale = product[6]
+                retail = product[7]
+                colors_data = product[10]  # قائمة الألوان مع التفاصيل
+                tags = product[12] if len(product) > 12 else []
+                
+                # تطبيق فلاتر Brand, Category, Type, Product Code
+                if selected_brands and brand_name not in selected_brands:
+                    continue
+                if selected_categories and category not in selected_categories:
+                    continue
+                if selected_types and product_type not in selected_types:
+                    continue
+                if selected_products and product_code not in selected_products:
+                    continue
+                
+                # معالجة كل لون كصف منفصل
+                for color_info in colors_data:
+                    color_name = color_info['name']
+                    color_stock = color_info['stock']
+                    image_url = color_info['image_url'] or ''
+                    
+                    # تطبيق فلتر اللون
+                    if selected_colors and color_name not in selected_colors:
+                        continue
+                    
+                    # تطبيق فلتر المخزون
+                    if stock_filter == 'in_stock' and color_stock <= 0:
+                        continue
+                    elif stock_filter == 'out_of_stock' and color_stock > 0:
+                        continue
+                    elif stock_filter == 'low_stock' and (color_stock > 5 or color_stock <= 0):
+                        continue
+                    
+                    # تجهيز Tags كنص (مفصول بفواصل)
+                    tags_text = ','.join([tag[1] for tag in tags]) if tags else ''
+                    
+                    # إضافة الصف
+                    filtered_data.append({
+                        'Product Code': product_code,
+                        'Brand Name': brand_name,
+                        'Product Type': product_type,
+                        'Category': category,
+                        'Size': size or '',
+                        'Wholesale Price': wholesale,
+                        'Retail Price': retail,
+                        'Color Name': color_name,
+                        'Stock': color_stock,
+                        'Image URL': image_url,
+                        'Tags': tags_text
+                    })
+            
+            if not filtered_data:
+                flash('No products match the selected filters!', 'warning')
+                return redirect(url_for('export_products'))
+            
+            # إنشاء Excel
+            df = pd.DataFrame(filtered_data)
+            output = BytesIO()
+            df.to_excel(output, index=False, engine='openpyxl')
+            output.seek(0)
+            
+            # تحديد اسم الملف حسب الفلاتر
+            filename = f'products_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
+            
+            flash(f'Exported {len(filtered_data)} product variants successfully!', 'success')
+            
+            return send_file(
+                output,
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                as_attachment=True,
+                download_name=filename
+            )
+            
+        except Exception as e:
+            flash(f'Error exporting products: {str(e)}', 'error')
+            return redirect(url_for('export_products'))
+    
+    # GET request - عرض الصفحة مع الفلاتر
+    brands = db.get_brands_for_filter()
+    categories = db.get_categories_for_filter()
+    product_types = [pt[1] for pt in db.get_all_product_types()]
+    colors = [c[1] for c in db.get_all_colors()]
+    
+    # جلب كل أكواد المنتجات
+    all_products = db.get_products_with_color_images('')
+    product_codes = sorted(list(set([p[1] for p in all_products])))
+    
+    return render_template('export_products.html',
+                         brands=brands,
+                         categories=categories,
+                         product_types=product_types,
+                         colors=colors,
+                         product_codes=product_codes)
+
+
 @app.route('/download_excel_template')
 def download_excel_template():
     """تحميل نموذج Excel المحسن - نسخة مبسطة بدون تنسيق"""
